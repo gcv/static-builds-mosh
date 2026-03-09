@@ -2,7 +2,7 @@ on:
   workflow_dispatch:
 name: Auto-Build
 env:
-  MOSH_TAG: 1.4.0+blink-17.3.0
+  MOSH_TAG: 1.4.0
 jobs:
   macports-cache:
     runs-on: macos-12
@@ -54,7 +54,7 @@ jobs:
         run: | 
           docker build -t builder --build-arg TARGET_ARCH=${{ matrix.architecture }} .
 
-      - run: git clone --depth=1 --branch mosh-$MOSH_TAG https://github.com/blinksh/mosh-server.git mosh
+      - run: git clone --depth=1 --branch mosh-$MOSH_TAG https://github.com/mobile-shell/mosh.git mosh
 
       - name: Build binaries for ${{ matrix.architecture }}
         run: docker run -v $PWD/mosh:/mosh -w /mosh --name=builder builder sh -c 'git config --global --add safe.directory /mosh && git describe --dirty --always && ./autogen.sh && LDFLAGS=-static ./configure && make V=1 && cat VERSION.stamp'
@@ -107,7 +107,7 @@ jobs:
             ${{ runner.os }}-build-
             ${{ runner.os }}-
 
-      - run: git clone --depth=1 --branch mosh-$MOSH_TAG https://github.com/blinksh/mosh-server.git mosh
+      - run: git clone --depth=1 --branch mosh-$MOSH_TAG https://github.com/mobile-shell/mosh.git mosh
       
       - run: PATH=/opt/local/bin:$PATH ./autogen.sh
         working-directory: ./mosh
@@ -214,4 +214,3 @@ jobs:
           files: |
             mosh-client-*/mosh-client*
             mosh-server-*/mosh-server*
-
