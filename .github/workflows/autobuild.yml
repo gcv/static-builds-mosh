@@ -57,7 +57,7 @@ jobs:
       - run: git clone --depth=1 --branch mosh-$MOSH_TAG https://github.com/mobile-shell/mosh.git mosh
 
       - name: Build binaries for ${{ matrix.architecture }}
-        run: docker run -v $PWD/mosh:/mosh -w /mosh --name=builder builder sh -c 'git config --global --add safe.directory /mosh && git describe --dirty --always && ./autogen.sh && LDFLAGS=-static ./configure && make V=1 && cat VERSION.stamp'
+        run: docker run -v $PWD/mosh:/mosh -w /mosh --name=builder builder sh -c 'git config --global --add safe.directory /mosh && git describe --dirty --always && ./autogen.sh && LDFLAGS=-static ./configure && make V=1'
 
       - name: Test run mosh-server
         run: docker run -v $PWD/mosh:/mosh -w /mosh/src/frontend builder sh -c 'chmod +x mosh-server && ./mosh-server'
