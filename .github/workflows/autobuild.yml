@@ -62,22 +62,27 @@ jobs:
       - name: Test run mosh-server
         run: docker run -v $PWD/mosh:/mosh -w /mosh/src/frontend builder sh -c 'chmod +x mosh-server && ./mosh-server'
 
-      - name: Rename binaries
+      - name: Create bundle
         run: |
-          mv mosh/src/frontend/mosh-server mosh/src/frontend/mosh-server-$MOSH_TAG-linux-${{ matrix.architecture }}
-          mv mosh/src/frontend/mosh-client mosh/src/frontend/mosh-client-$MOSH_TAG-linux-${{ matrix.architecture }}
-      
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mosh-server-${{ env.MOSH_TAG }}-linux-${{ matrix.architecture }}
-          path: mosh/src/frontend/mosh-server-${{ env.MOSH_TAG }}-linux-${{ matrix.architecture }}
-          if-no-files-found: error
+          bundle="mosh-${MOSH_TAG}-linux-${{ matrix.architecture }}"
+          mkdir -p "dist/${bundle}"
+          install -m 755 mosh/scripts/mosh "dist/${bundle}/mosh"
+          install -m 755 mosh/src/frontend/mosh-client "dist/${bundle}/mosh-client"
+          install -m 755 mosh/src/frontend/mosh-server "dist/${bundle}/mosh-server"
+          tar -C dist -czf "dist/${bundle}.tar.gz" "${bundle}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mosh-client-${{ env.MOSH_TAG }}-linux-${{ matrix.architecture }}
-          path: mosh/src/frontend/mosh-client-${{ env.MOSH_TAG }}-linux-${{ matrix.architecture }}
+          name: mosh-${{ env.MOSH_TAG }}-linux-${{ matrix.architecture }}
+          path: dist/mosh-${{ env.MOSH_TAG }}-linux-${{ matrix.architecture }}.tar.gz
           if-no-files-found: error
+
+      - name: Verify bundle contents
+        run: |
+          # Ensure the bundle contains the expected executables with stable names.
+          tar -tzf dist/mosh-${MOSH_TAG}-linux-${{ matrix.architecture }}.tar.gz | grep -Fx "mosh-${MOSH_TAG}-linux-${{ matrix.architecture }}/mosh"
+          tar -tzf dist/mosh-${MOSH_TAG}-linux-${{ matrix.architecture }}.tar.gz | grep -Fx "mosh-${MOSH_TAG}-linux-${{ matrix.architecture }}/mosh-client"
+          tar -tzf dist/mosh-${MOSH_TAG}-linux-${{ matrix.architecture }}.tar.gz | grep -Fx "mosh-${MOSH_TAG}-linux-${{ matrix.architecture }}/mosh-server"
   
   macos-build:
     name: macOS Build (x86_64, arm64)
@@ -117,27 +122,44 @@ jobs:
           env MOSH_TAG=$MOSH_TAG ZERO_AR_DATE=1 MACOSX_DEPLOYMENT_TARGET=11.0 PATH=/opt/local/bin:$PATH ./build.sh
         working-directory: ./macOS
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mosh-client-${{ env.MOSH_TAG }}-darwin-x86_64
-          path: ./macOS/prefix_x86_64/local/bin/mosh-client-${{ env.MOSH_TAG }}-darwin-x86_64
+      - name: Create bundle for x86_64
+        run: |
+          bundle="mosh-${MOSH_TAG}-darwin-x86_64"
+          mkdir -p "dist/${bundle}"
+          install -m 755 ./macOS/prefix_x86_64/local/bin/mosh "dist/${bundle}/mosh"
+          install -m 755 ./macOS/prefix_x86_64/local/bin/mosh-client "dist/${bundle}/mosh-client"
+          install -m 755 ./macOS/prefix_x86_64/local/bin/mosh-server "dist/${bundle}/mosh-server"
+          tar -C dist -czf "dist/${bundle}.tar.gz" "${bundle}"
+
+      - name: Create bundle for arm64
+        run: |
+          bundle="mosh-${MOSH_TAG}-darwin-arm64"
+          mkdir -p "dist/${bundle}"
+          install -m 755 ./macOS/prefix_arm64/local/bin/mosh "dist/${bundle}/mosh"
+          install -m 755 ./macOS/prefix_arm64/local/bin/mosh-client "dist/${bundle}/mosh-client"
+          install -m 755 ./macOS/prefix_arm64/local/bin/mosh-server "dist/${bundle}/mosh-server"
+          tar -C dist -czf "dist/${bundle}.tar.gz" "${bundle}"
+
+      - name: Verify macOS bundles
+        run: |
+          for arch in x86_64 arm64; do
+            bundle="dist/mosh-${MOSH_TAG}-darwin-${arch}.tar.gz"
+            tar -tzf "${bundle}" | grep -Fx "mosh-${MOSH_TAG}-darwin-${arch}/mosh"
+            tar -tzf "${bundle}" | grep -Fx "mosh-${MOSH_TAG}-darwin-${arch}/mosh-client"
+            tar -tzf "${bundle}" | grep -Fx "mosh-${MOSH_TAG}-darwin-${arch}/mosh-server"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mosh-server-${{ env.MOSH_TAG }}-darwin-x86_64
-          path: ./macOS/prefix_x86_64/local/bin/mosh-server-${{ env.MOSH_TAG }}-darwin-x86_64
-      
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mosh-client-${{ env.MOSH_TAG }}-darwin-arm64
-          path: ./macOS/prefix_arm64/local/bin/mosh-client-${{ env.MOSH_TAG }}-darwin-arm64
+          name: mosh-${{ env.MOSH_TAG }}-darwin-x86_64
+          path: ./dist/mosh-${{ env.MOSH_TAG }}-darwin-x86_64.tar.gz
+          if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mosh-server-${{ env.MOSH_TAG }}-darwin-arm64
-          path: ./macOS/prefix_arm64/local/bin/mosh-server-${{ env.MOSH_TAG }}-darwin-arm64
-
-
+          name: mosh-${{ env.MOSH_TAG }}-darwin-arm64
+          path: ./dist/mosh-${{ env.MOSH_TAG }}-darwin-arm64.tar.gz
+          if-no-files-found: error
 
   release:
     name: Release
@@ -148,6 +170,9 @@ jobs:
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       
       - name: Create release description
         run: |
@@ -155,28 +180,16 @@ jobs:
             echo '- [Workflow file](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/.github/workflows/autobuild.yml)'
             echo
             echo '## Files'
-            echo '### Linux'
             echo '```'
             (
-              for dir in mosh-client-$MOSH_TAG-linux* mosh-server-$MOSH_TAG-linux*; do
-                cd "$dir"
-                for prog in mosh*; do
-                  file "$prog"
-                done
-                cd ..
-              done
-            )
-            echo '```'
-            echo
-            echo '### macOS'
-            echo '```'
-            (
-              for dir in mosh-client-$MOSH_TAG-darwin* mosh-server-$MOSH_TAG-darwin*; do
-                cd "$dir"
-                for prog in mosh*; do
-                  file "$prog"
-                done
-                cd ..
+              for bundle in dist/mosh-*.tar.gz; do
+                echo "$(basename "$bundle")"
+                tar -tzf "$bundle"
+                tmpdir=$(mktemp -d)
+                tar -xzf "$bundle" -C "$tmpdir"
+                file "$tmpdir"/*/*
+                rm -rf "$tmpdir"
+                echo
               done
             )
             echo '```'
@@ -184,12 +197,8 @@ jobs:
             echo '## SHA256 Checksums'
             echo '```'
             (
-              for dir in mosh-client* mosh-server*; do
-                cd "$dir"
-                for prog in mosh*; do
-                  sha256sum "$prog"
-                done
-                cd ..
+              for bundle in dist/mosh-*.tar.gz; do
+                sha256sum "$bundle"
               done
             )
             echo '```'
@@ -212,5 +221,4 @@ jobs:
           draft: false
           body_path: release.md
           files: |
-            mosh-client-*/mosh-client*
-            mosh-server-*/mosh-server*
+            dist/mosh-*.tar.gz
